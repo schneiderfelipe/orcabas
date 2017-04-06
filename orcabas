@@ -1,0 +1,100 @@
+#!/bin/bash
+VERSION=0.1.0
+
+# Usage:
+#   orcabas outputfile [outputfile...]
+#   orcabas -h
+#   orcabas -v
+
+function version_page {
+  echo "$(basename "$0")" "$VERSION"
+}
+
+function help_page {
+  version_page
+  sed -ne '/#[^!]\(.*\)/{
+    /\/#/d
+    s/    //
+    s/# //p
+  }' "$0"
+}
+
+TEMP_FOLDER=$(mktemp -d 2>/dev/null || mktemp -d -t 'tmp')
+
+function cleanup {
+  rm -rf "$TEMP_FOLDER"
+}
+
+trap cleanup EXIT
+
+# Options:
+while getopts ":hvn:" opt "$@"; do
+  case $opt in
+    h)
+      # -h show this help message
+      help_page
+      exit 0
+      ;;
+    v)
+      # -v show version
+      version_page
+      exit 0
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      exit 1
+      ;;
+    :)
+      echo "Option -$OPTARG requires an argument." >&2
+      exit 1
+      ;;
+  esac
+done
+
+shift $((OPTIND-1))
+
+# Examples:
+
+#   $ orcabas *.out
+function orca_readbas {
+  outputfile=$1
+  outputfile_basename=$(basename "$outputfile" ".out")
+
+  sed -n \
+      -e '/.*BASIS SET IN INPUT FORMAT.*/,/.*-------------------------------.*/p' \
+        "$outputfile" | \
+          head -n-3 | \
+          tail -n+3 \
+            > "${outputfile_basename}.gbs"
+}
+
+function orca_readaux {
+  outputfile=$1
+  outputfile_basename=$(basename "$outputfile" ".out")
+
+  sed -n \
+      -e '/.*AUXILIARY BASIS SET IN INPUT FORMAT.*/,/.*------------------------------------------------------------------------------.*/p' \
+        "$outputfile" | \
+          head -n-1 | \
+          tail -n+3 \
+            > "${outputfile_basename}-ri.gbs"
+}
+
+called_from=$(pwd)
+
+for outputfile in "$@"; do
+  if [ -r "$outputfile" ]; then
+    cd "$(dirname "$outputfile")"
+
+    orca_readbas "$outputfile"
+    orca_readaux "$outputfile"
+  else
+    echo "  $outputfile does not exist or is not readable."
+    exit 1
+  fi
+
+  cd "$called_from"
+done
+
+# orcabas <https://github.com/chemical-scripts/orcabas>
+# is licensed under the MIT License.
